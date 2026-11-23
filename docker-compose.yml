@@ -1,0 +1,76 @@
+
+name: kafka-market-lab
+
+services:
+
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v26.2.7
+
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container
+      - --smp=2
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+      - --rpc-addr=redpanda:33145
+      - --advertise-rpc-addr=redpanda:33145
+      - --default-log-level=info
+
+    ports:
+      - "19092:19092"
+      - "19644:9644"
+
+    volumes:
+      - kafka_data:/var/lib/redpanda/data
+
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+    restart: unless-stopped
+
+  console:
+    image: docker.redpanda.com/redpandadata/console:v3.14.0
+
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+
+    depends_on:
+      redpanda:
+        condition: service_healthy
+
+    ports:
+      - "8080:8080"
+
+    restart: unless-stopped
+
+  kafka-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    image: kafka-market-lab-app:latest
+
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      PYTHONUNBUFFERED: "1"
+      LOG_LEVEL: INFO
+
+    depends_on:
+      redpanda:
+        condition: service_healthy
+
+    command:
+      - python
+      - -m
+      - src.cli
+      - create-topics
+
+    profiles:
+      - tools
+
+volumes:
+  kafka_data:
